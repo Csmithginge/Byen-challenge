@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>I byen?</title>
+<style>
+:root{--bg:#f6f3ee;--card:#fff;--ink:#1d1b19;--mute:#6f6a63;--line:#e3ddd3;--acc:#e4572e;--acc-ink:#fff;--yes:#2e9e6b;--no:#b8b2a8;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#171513;--card:#221f1c;--ink:#f2ede6;--mute:#a39c92;--line:#35302b;--acc:#ff7a52;--acc-ink:#1a0f0a;--yes:#4cc38a;--no:#6b655d;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:calc(22px + env(safe-area-inset-top,0px)) 16px calc(40px + env(safe-area-inset-bottom,0px))}
+h1{font-size:30px;margin:6px 0 2px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:0 0 10px}
+input{width:100%;font:inherit;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-bottom:10px}
+button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:13px 16px}
+button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600;width:100%}
+button:disabled{opacity:.6;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row button{flex:1;min-width:90px}
+button.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+button.on.yes{background:var(--yes);border-color:var(--yes)}
+button.on.no{background:var(--no);border-color:var(--no)}
+.link{background:none;border:none;color:var(--mute);padding:4px 0;text-decoration:underline;font-size:14px}
+.who{display:flex;justify-content:space-between;align-items:center}
+.group{margin:0 0 12px}.group:last-child{margin:0}
+.gh{font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between}
+.gh span{color:var(--mute);font-weight:400}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:4px 11px;font-size:14px}
+.chip.me{border-color:var(--acc)}
+.empty{color:var(--mute);font-size:14px}
+.note{color:var(--mute);font-size:14px;margin:8px 0 0}
+.warn{border-color:var(--acc)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>I byen? 🍻</h1>
+  <p class="sub" id="datoLinje">&nbsp;</p>
+
+  <div id="login" class="card hide">
+    <h2>Hvad hedder du?</h2>
+    <input id="navn" maxlength="24" placeholder="Dit navn" autocomplete="given-name">
+    <button class="primary" id="ind">Fortsæt</button>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="who"><span>Hej <b id="mitNavn"></b></span><button class="link" id="skift">Skift navn</button></div>
+
+    <div class="card" style="margin-top:10px">
+      <h2 id="idagTitel">Skal du i byen i dag?</h2>
+      <div class="row">
+        <button id="ja" class="yes">Ja, jeg er med</button>
+        <button id="nej" class="no">Nej, ikke i dag</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ellers en anden dag?</h2>
+      <div class="row" id="dage"></div>
+      <p class="note">Du kan vælge flere dage.</p>
+    </div>
+
+    <button class="primary" id="send" style="margin-bottom:6px">Indsend svar</button>
+    <p class="note" id="status" style="margin:0 0 14px;text-align:center"></p>
+    <div class="card warn hide" id="fejl"></div>
+
+    <div class="card">
+      <h2>Hvem vil hvad</h2>
+      <div id="oversigt"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i)};
+  var NAVNE=["søndag","mandag","tirsdag","onsdag","torsdag","fredag","lørdag"];
+  var ALLE=[["lor","Lørdag",6],["son","Søndag",0],["ons","Onsdag",3]];
+  var mig=null,serverDato=null,ugedag=null,poster=[],kladde=null,sendt=false,muligeDage=[];
+
+  function gem(k,v){try{v===null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
+  function hent(k){try{return localStorage.getItem(k)}catch(e){return null}}
+  function ren(n){return n.replace(/\s+/g," ").trim().slice(0,24)}
+  function minPost(){return poster.filter(function(p){return p.navn.toLowerCase()===mig.toLowerCase()})[0]||null}
+  function hentKladde(){
+    if(kladde)return kladde;
+    var p=minPost();
+    return {idag:p&&p.idagDato===serverDato?p.idag:null,dage:p?(p.dage||[]).slice():[]};
+  }
+  function visFejl(t){var f=$("fejl");f.className="card warn"+(t?"":" hide");f.textContent=t}
+
+  function tegnDage(){
+    var box=$("dage");box.textContent="";
+    muligeDage.forEach(function(d){
+      var b=document.createElement("button");b.textContent=d[1];b.dataset.k=d[0];
+      b.onclick=function(){var k=hentKladde();var i=k.dage.indexOf(d[0]);i>=0?k.dage.splice(i,1):k.dage.push(d[0]);kladde=k;sendt=false;opdater()};
+      box.appendChild(b);
+    });
+  }
+
+  function gruppe(titel,liste){
+    var g=document.createElement("div");g.className="group";
+    var h=document.createElement("div");h.className="gh";
+    var a=document.createElement("div");a.textContent=titel;
+    var c=document.createElement("span");c.textContent=liste.length;
+    h.appendChild(a);h.appendChild(c);g.appendChild(h);
+    var w=document.createElement("div");w.className="chips";
+    if(!liste.length){var e=document.createElement("span");e.className="empty";e.textContent="Ingen endnu";w.appendChild(e)}
+    liste.forEach(function(n){var s=document.createElement("span");s.className="chip"+(mig&&n.toLowerCase()===mig.toLowerCase()?" me":"");s.textContent=n;w.appendChild(s)});
+    g.appendChild(w);return g;
+  }
+
+  function opdater(){
+    if(!mig||serverDato===null)return;
+    var kl=hentKladde();
+    $("ja").className="yes"+(kl.idag==="ja"?" on":"");
+    $("nej").className="no"+(kl.idag==="nej"?" on":"");
+    Array.prototype.forEach.call($("dage").children,function(b){b.className=kl.dage.indexOf(b.dataset.k)>=0?"on":""});
+    $("status").textContent=kladde?"Du har ikke indsendt endnu.":(sendt?"Dit svar er sendt ✓":"");
+    var sorteret=poster.slice().sort(function(a,b){return a.navn.localeCompare(b.navn,"da")});
+    var ja=[],nej=[];
+    sorteret.forEach(function(x){if(x.idagDato===serverDato){if(x.idag==="ja")ja.push(x.navn);else if(x.idag==="nej")nej.push(x.navn)}});
+    var o=$("oversigt");o.textContent="";
+    o.appendChild(gruppe("I byen i dag",ja));
+    o.appendChild(gruppe("Ikke i dag",nej));
+    muligeDage.forEach(function(d){
+      o.appendChild(gruppe("Kan også "+d[1].toLowerCase(),sorteret.filter(function(x){return (x.dage||[]).indexOf(d[0])>=0}).map(function(x){return x.navn})));
+    });
+  }
+
+  function hentSvar(){
+    return fetch("/api/svar",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+      var forste=serverDato===null;
+      serverDato=d.dato;ugedag=d.ugedag;poster=d.svar||[];
+      if(forste||$("dage").children.length===0){
+        muligeDage=ALLE.filter(function(x){return x[2]!==ugedag});
+        $("datoLinje").textContent="Det er "+NAVNE[ugedag]+" – giv de andre besked.";
+        $("idagTitel").textContent="Skal du i byen i dag ("+NAVNE[ugedag]+")?";
+        tegnDage();
+      }
+      visFejl("");opdater();
+    }).catch(function(){visFejl("Kunne ikke hente de andres svar lige nu.")});
+  }
+
+  function visApp(){$("login").classList.add("hide");$("app").classList.remove("hide");$("mitNavn").textContent=mig;kladde=null;opdater()}
+  function visLogin(){$("login").classList.remove("hide");$("app").classList.add("hide");$("navn").focus()}
+
+  $("ind").onclick=function(){var n=ren($("navn").value);if(!n){$("navn").focus();return}mig=n;gem("byen-navn",n);visApp()};
+  $("navn").onkeydown=function(e){if(e.key==="Enter")$("ind").click()};
+  $("skift").onclick=function(){gem("byen-navn",null);mig=null;$("navn").value="";visLogin()};
+  $("ja").onclick=function(){var k=hentKladde();k.idag="ja";kladde=k;sendt=false;opdater()};
+  $("nej").onclick=function(){var k=hentKladde();k.idag="nej";kladde=k;sendt=false;opdater()};
+  $("send").onclick=function(){
+    var k=hentKladde();
+    if(!k.idag&&!k.dage.length){visFejl("Vælg mindst ét svar, før du indsender.");return}
+    visFejl("");$("send").disabled=true;
+    fetch("/api/svar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({navn:mig,idag:k.idag,dage:k.dage})})
+      .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.fejl||"Fejl")})})
+      .then(function(){kladde=null;sendt=true;return hentSvar()})
+      .catch(function(e){visFejl(e.message||"Dit svar blev ikke gemt. Prøv igen.")})
+      .then(function(){$("send").disabled=false;opdater()});
+  };
+
+  var gemt=hent("byen-navn");
+  if(gemt){mig=gemt;visApp()}else{visLogin()}
+  hentSvar();
+  setInterval(function(){if(!document.hidden)hentSvar()},5000);
+})();
+</script>
+</body>
+</html>
